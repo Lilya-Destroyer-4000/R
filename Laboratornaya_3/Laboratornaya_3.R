@@ -64,3 +64,7 @@ df.filter
 gp <- ggplot(data = df.filter, aes_string(x = df.filter$Netweight..kg., y = df.filter$Trade.Value..US..))
 gp <- gp + geom_point() + geom_smooth(method = 'lm')
 gp
+
+# Запуск приложения
+runApp('./r_app', launch.browser = TRUE,
+       display.mode = 'showcase')
