@@ -1,0 +1,90 @@
+---
+title: "Лабораторная Работа №1"
+author: "Закутняя Лилия Алексеевна"
+date: "24 03 2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=F}
+library('rvest')
+
+# Поскольку на одной странице всего 48 предложений, спарсим данные с двух, по следующим ссылкам
+url1 <- 'https://market.yandex.ru/catalog--smartfony/16814639/list?hid=91491&cpa=0&glfilter=16816262%3A16816264&onstock=1&local-offers-first=0'
+url2 <- 'https://market.yandex.ru/catalog--smartfony/16814639/list?cpa=0&hid=91491&glfilter=16816262%3A16816264&onstock=1&page=2&local-offers-first=0'
+
+webpage1 <- read_html(url1)
+webpage2 <- read_html(url2)
+
+# Получаем названия смартфонов
+smartphone_names <- c(webpage1 %>% html_nodes(".cLo1fZHm2y") %>% html_text,
+                      webpage2 %>% html_nodes(".cLo1fZHm2y") %>% html_text)
+smartphone_names
+
+# Описания смартфонов
+
+smartphone_descriptions <- c(webpage1 %>% html_nodes("._2_oj-OEI-o") %>% html_text,
+                             webpage2 %>% html_nodes("._2_oj-OEI-o") %>% html_text)
+smartphone_descriptions
+
+# Цены смартфонов
+smartphone_price <- c(webpage1 %>% html_nodes("._3f2ZtYT7NH") %>% html_text,
+                      webpage2 %>% html_nodes("._3f2ZtYT7NH") %>% html_text)
+# Избавляемся от всего кроме чисел
+smartphone_price <- gsub("[^[:digit:]]", "", smartphone_price)
+# Преобразуем в числовой формат
+smartphone_price <- as.numeric(smartphone_price)
+smartphone_price
+
+# Рейтинг смартфона
+# функция перебора тегов внутри тегов более высокого уровня
+get_tags <- function(node){
+  # найти все теги с рейтингом
+  raw_data <- html_nodes(node, selector) %>% html_text
+  # значения нулевой длины меняем на пропуски
+  data_NAs <- ifelse(length(raw_data) == 0, NA, raw_data)
+}
+
+selector <- '._1iKHblnc3a'
+smartphone_rating <- c(sapply(html_nodes(webpage1, '._1B9w_GzQuM'), get_tags),
+                       sapply(html_nodes(webpage2, '._1B9w_GzQuM'), get_tags))
+# Преобразуем полученные данные в числовой формат
+smartphone_rating <- as.numeric(smartphone_rating)
+smartphone_rating
+
+# Парсим количество отзывов
+selector <- '.KdrkCVDrVm'
+
+smartphone_feedback <- c(sapply(html_nodes(webpage1, '._1B9w_GzQuM'), get_tags),
+                         sapply(html_nodes(webpage2, '._1B9w_GzQuM'), get_tags))
+# Избавляемся от всего кроме чисел
+smartphone_feedback <- gsub("[^[:digit:]]", "", smartphone_feedback)
+# Преобразуем в число
+smartphone_feedback <- as.numeric(smartphone_feedback)
+
+data.dir <- './data'
+
+# Создаём директорию для данных, если она ещё не существует:
+if (!file.exists(data.dir)) {
+  dir.create(data.dir)
+}
+
+# Создаём файл с логом загрузок, если он ещё не существует:
+log.filename <- './data/download.log'
+if (!file.exists(log.filename)) file.create(log.filename)
+
+DF <- data.frame(Smartphone_Name = smartphone_names,
+                 Description = smartphone_descriptions,
+                 Price = smartphone_price,
+                 Rating = smartphone_rating,
+                 Feedback = smartphone_feedback)
+
+# Записываем в .csv файл
+write.csv(DF, file = './data/yandex_market_smartphone.csv', row.names = F)
+# запись в лог файл
+write(paste('Файл "yandex_market_smartphone.csv" создан:', Sys.time()), 
+      file = log.filename, append = T)
+```
