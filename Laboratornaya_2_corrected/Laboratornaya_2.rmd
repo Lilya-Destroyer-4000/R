@@ -1,0 +1,324 @@
+---
+title: "Лабораторная Работа №2"
+author: "Закутняя Лилия Алексеевна"
+date: "24 03 2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Вариант -- 8
+
+## Задание
+
+1. Первый график постройте на данных по импорту продовольственных товаров в РФ в графической  системе ggplot2.  Данные  за  период  с  января  2010  по  декабрь  2020  гг. необходимо загрузить из базы данных международной торговли UN COMTRADE, как было показано  в  практиках  1-2.  Нас  интересует  эффект  от  введения  продовольственных санкций.
+
+2. Второй график постройте на данных, собранных в упражнении No1, в графической системе lattice.  Тип  графика  может  быть  любым,  при  этом  обязательно  должна присутствовать разбивка по категориям (например: годы, производители товара, жанры фильмов).
+
+# Задание для первого графика
+
+Товар: капуста, цветная капуста, кольраби и капуста, свежие, охлажденные, код 0704. График: коробчатые диаграммы суммарной массы поставок по полугодиям, за 2013, 2014 и 2020 гг. Годы показать на фасетках, полугодиям соответствуют коробчатые. Цветом коробчатой показать две группы стран-поставщиков: 1) страны, попавшие под действие продовольственного эмбарго в 2014 году; 2) остальные страны. Пропуски заменить на модельные значения.
+
+
+## Определяем код РФ и выгружаем данные в .csv файлы
+```{r, warning=FALSE}
+# Библиотека для работы с JSON
+library('rjson')
+# Адрес справочника по странам UN COMTRADE
+fileURL <- "http://comtrade.un.org/data/cache/partnerAreas.json"
+#Загрузка данных из формата JSON
+reporters <- fromJSON(file = fileURL)
+is.list(reporters)
+
+# Соединяем элементы списка построчно
+reporters <- t(sapply(reporters$results, rbind))
+dim(reporters)
+
+# Превращаем в DataFrame
+reporters <- as.data.frame(reporters)
+head(reporters)
+
+# Код Россиийской Федерации
+names(reporters) <- c('State.Code', 'State.Name.En')
+reporters[reporters$State.Name.En == "Russian Federation", ]$State.Code
+
+# Код России: 643, воспользуемся им в дальнейшем
+
+# функция, реализующая API (источник: UN COMTRADE)
+source("https://raw.githubusercontent.com/aksyuk/R-data/master/API/comtrade_API.R")
+
+# Выгружаем данные за каждый год в отдельный файл .csv
+# Код продукции: 0704
+for (i in 2010:2020){
+  Sys.sleep(5)
+  s1 <- get.Comtrade(r = 'all', p = 643,
+                     ps = as.character(i), freq = "M",
+                     rg = '1', cc = '0704',
+                     fmt = 'csv')
+  # Имя файла для сохранения
+  file.name <- paste('./data/comtrade_', i, '.csv', sep = '')
+  # Запись данных в файл
+  write.csv(s1$data, file.name, row.names = F)
+  print(paste("Данные за", i, "год загружены в файл",file.name, "!"))
+  write(paste('Файл',
+              paste('comtrade_', i, '.csv', sep = ''),
+              'загржен', Sys.time()), file = './data/download.log', append=T)
+}
+```
+
+## Работа с данными и построение графика
+```{r, warning=FALSE}
+library('stringr')
+library('ggplot2')
+library('gridExtra')
+library('data.table')
+
+data <- read.csv('./data/comtrade_2010.csv', header = TRUE, sep = ',')
+for (i in 2011:2020){
+  # Считываем данные из .csv файла
+  df <- read.csv(paste('./data/comtrade_', i, '.csv', sep=''), header = T, sep=',')
+  # Заполняем основной дата фрейм
+  data <- rbind(data, df)
+}
+
+data <- data[, c(2, 4, 10, 30, 32)]
+data <- data.table(data)
+
+# Замена пропусков (NA) на модельные значения
+# Переменные: масса поставки и ее стоимость
+x <- data$Trade.Value..US..
+y <- data$Netweight..kg.
+
+# Оценка регрессии с помощью МНК
+fit <- lm(y ~ x)
+summary(fit)
+
+# R - квадрат
+R.sq <- summary(fit)$r.squared
+
+# Строим график разброса переменных X и Y с линией регрессии
+plot(x, y,
+     xlab = 'Стоимость поставки, долл.США',
+     ylab = 'Масса поставки, кг',
+     pch = 21, col = rgb(0, 0, 0, alpha = 0.4), 
+     bg = rgb(0, 0, 0, alpha = 0.4))
+abline(fit, col = rgb(0, 0, 1), lwd = 2)
+mtext(paste('Прямая линейная зваимосвязь, R^2=',
+            round(R.sq*100, 1),
+            '%', sep = ''),
+      side = 3, line = 1)
+
+# Координаты пропущенных y по оси x
+NAs <- data[is.na(Netweight..kg.), Trade.Value..US..]
+points(x = NAs, y = rep(0, length(NAs)),
+       col = 'red', pch = '|')
+
+# Рассмотрим участок, на котором значения по осям лежат в интервалах от 0 до 5 000
+plot(x, y, 
+     xlab = 'Стоимость поставки, долл.США', 
+     ylab = 'Масса поставки, кг',
+     pch = 21, col = rgb(0, 0, 0, alpha = 0.4), 
+     bg = rgb(0, 0, 0, alpha = 0.4),
+     xlim = c(0, 5000), ylim = c(0, 5000))
+abline(fit, col = rgb(0, 0, 1), lwd = 2)
+points(x = NAs, y = rep(0, length(NAs)), 
+ col = 'red', pch = '|') 
+
+# Пробуем регрессию на логарифмах
+y[y == 0] <- NA
+fit.log <- lm(log(y) ~ log(x))
+summary(fit.log)
+
+R.sq.log <- summary(fit.log)$r.squared 
+
+# Построим график разброса
+plot(log(x), log(y), 
+     xlab = 'Логарифмы стоимости поставки', 
+     ylab = 'Логарифмы массы поставки',
+     pch = 21, col = rgb(0, 0, 0, alpha = 0.4), 
+     bg = rgb(0, 0, 0, alpha = 0.4))
+# Добавляем прямую регрессии на график
+abline(fit.log, col = rgb(0, 0, 1), lwd = 2)
+# Добавляем название графика
+mtext(paste('Прямая линейная взаимосвязь, R^2=',
+      round(R.sq.log*100, 1),
+      '%', sep = ''), 
+      side = 3, line = 1)
+points(x = log(NAs), y = rep(0, length(NAs)), 
+       col = 'red', pch = '|')
+
+# Новый столбец, в котором будут заполнены пропуски
+data[, Netweight..kg.model := Netweight..kg.]
+
+# Прогноз по модели на логарифмах
+y.model.log <- predict(fit.log,
+                       newdata = data.frame(x = NAs))
+
+# Исходные единицы измерения Y
+y.model <- exp(y.model.log)
+
+# Заменяем пропуски модельными значениями
+data[is.na(Netweight..kg.model),
+     Netweight..kg.model := round(y.model, 0)]
+
+# результат
+data
+data <- data[, c(1, 2, 3, 6)]
+
+# Старны попавшие под продовольственное эмбарго в 2014 году
+embargo <- c('EU-28', 'USA', 'Australia', 'Norway', 'Canada')
+
+
+# Разбиваем на полугодия
+df1 <- data.frame(Year = numeric(), Period.Desc. = character(), Reporter = character(), Netweight..kg.model = numeric(), Period = character())
+df2 <- data.frame(Year = numeric(), Period.Desc. = character(), Reporter = character(), Netweight..kg.model = numeric(), Period = character())
+for (year in c(2013, 2014, 2020)){
+  for (m in month.name[1:6]){
+    df1 <- rbind(df1, cbind(data[data$Year == year & str_detect(data$Period.Desc., m), ], data.frame(Period = 'янв-авг')))
+  }
+  for (m in month.name[7:12]){
+    df2 <- rbind(df2, cbind(data[data$Year == year & str_detect(data$Period.Desc., m), ], data.frame(Period = 'сен-дек')))
+  }
+}
+
+df1
+df2
+df <- rbind(df1, df2)
+# # Создаем категориальную переменную (по полугодиям и попадание под эмбарго)
+# df1.embargo <- data.frame(Year = numeric(), Embargo = character(), Weight = numeric())
+# df1.embargo <- rbind(df1.embargo, data.frame(Year = df1[df1$Reporter %in% embargo, ]$Year,
+#                                            Embargo = "Под эмбарго первое полугодие", Weight = df1[df1$Reporter %in% embargo, ]$Netweight..kg.model))
+# df1.embargo <- rbind(df1.embargo, data.frame(Year = df1[!(df1$Reporter %in% embargo), ]$Year,
+#                                            Embargo = "Не под эмбарго первое полугодие", Weight = df1[!(df1$Reporter %in% embargo), ]$Netweight..kg.model))
+# 
+# df2.embargo <- data.frame(Year = numeric(), Embargo = character(), Weight = numeric())
+# df2.embargo <- rbind(df2.embargo, data.frame(Year = df2[df2$Reporter %in% embargo, ]$Year,
+#                                            Embargo = "Под эмбарго второе полугодие", Weight = df2[df2$Reporter %in% embargo, ]$Netweight..kg.model))
+# df2.embargo <- rbind(df2.embargo, data.frame(Year = df2[!(df2$Reporter %in% embargo), ]$Year,
+#                                            Embargo = "Не под эмбарго второе полугодие", Weight = df2[!(df2$Reporter %in% embargo), ]$Netweight..kg.model))
+# 
+# df.embargo <- rbind(df1.embargo, df2.embargo)
+# df.embargo
+df <- df[!is.na(df$Year), ]
+df
+# Избавляемся от аномальных значений, чтобы график выглядел лучше
+#df <- df[df$Weight < 2e+05, ]
+
+# Строим график и сохраняем его в директорию где расположен скрипт
+png('image_ggplot.png', width = 1000, height= 1000)
+ggplot(data = df, aes(x = Netweight..kg.model, y = Period, group = Period, color = Period)) +
+  geom_boxplot() +
+  facet_grid(. ~ Year) + 
+  coord_flip() +
+  scale_color_manual(values = c('red', 'blue', 'green', 'yellow'),
+                     name = "Страны под эмбарго и нет по полугодиям") +
+  labs(title = 'Коробчатые диаграммы суммарной массы поставок по полугодиям',
+       y = 'Период', x = 'Масса')
+dev.off()
+```
+
+## Парсинг данных из первой лабораторной работы
+
+```{r, warning=FALSE}
+library('rvest')
+
+# Поскольку на одной странице всего 48 предложений, спарсим данные с двух, по следующим ссылкам
+url1 <- 'https://market.yandex.ru/catalog--smartfony/16814639/list?hid=91491&cpa=0&glfilter=16816262%3A16816264&onstock=1&local-offers-first=0'
+url2 <- 'https://market.yandex.ru/catalog--smartfony/16814639/list?cpa=0&hid=91491&glfilter=16816262%3A16816264&onstock=1&page=2&local-offers-first=0'
+
+webpage1 <- read_html(url1)
+webpage2 <- read_html(url2)
+
+# Получаем названия смартфонов
+smartphone_names <- c(webpage1 %>% html_nodes(".cLo1fZHm2y") %>% html_text,
+                      webpage2 %>% html_nodes(".cLo1fZHm2y") %>% html_text)
+smartphone_names
+
+# Описания смартфонов
+
+smartphone_descriptions <- c(webpage1 %>% html_nodes("._2_oj-OEI-o") %>% html_text,
+                             webpage2 %>% html_nodes("._2_oj-OEI-o") %>% html_text)
+smartphone_descriptions
+
+# Цены смартфонов
+smartphone_price <- c(webpage1 %>% html_nodes("._3f2ZtYT7NH") %>% html_text,
+                      webpage2 %>% html_nodes("._3f2ZtYT7NH") %>% html_text)
+# Избавляемся от всего кроме чисел
+smartphone_price <- gsub("[^[:digit:]]", "", smartphone_price)
+# Преобразуем в числовой формат
+smartphone_price <- as.numeric(smartphone_price)
+smartphone_price
+
+# Рейтинг смартфона
+# функция перебора тегов внутри тегов более высокого уровня
+get_tags <- function(node){
+  # найти все теги с рейтингом
+  raw_data <- html_nodes(node, selector) %>% html_text
+  # значения нулевой длины меняем на пропуски
+  data_NAs <- ifelse(length(raw_data) == 0, NA, raw_data)
+}
+
+selector <- '._1iKHblnc3a'
+smartphone_rating <- c(sapply(html_nodes(webpage1, '._1B9w_GzQuM'), get_tags),
+                       sapply(html_nodes(webpage2, '._1B9w_GzQuM'), get_tags))
+# Преобразуем полученные данные в числовой формат
+smartphone_rating <- as.numeric(smartphone_rating)
+smartphone_rating
+
+# Парсим количество отзывов
+selector <- '.KdrkCVDrVm'
+
+smartphone_feedback <- c(sapply(html_nodes(webpage1, '._1B9w_GzQuM'), get_tags),
+                         sapply(html_nodes(webpage2, '._1B9w_GzQuM'), get_tags))
+# Избавляемся от всего кроме чисел
+smartphone_feedback <- gsub("[^[:digit:]]", "", smartphone_feedback)
+# Преобразуем в число
+smartphone_feedback <- as.numeric(smartphone_feedback)
+
+data.dir <- './data'
+
+# Создаём директорию для данных, если она ещё не существует:
+if (!file.exists(data.dir)) {
+  dir.create(data.dir)
+}
+
+# Создаём файл с логом загрузок, если он ещё не существует:
+log.filename <- './data/download.log'
+if (!file.exists(log.filename)) file.create(log.filename)
+
+DF <- data.frame(Smartphone_Name = smartphone_names,
+                 Description = smartphone_descriptions,
+                 Price = smartphone_price,
+                 Rating = smartphone_rating,
+                 Feedback = smartphone_feedback)
+
+# Записываем в .csv файл
+write.csv(DF, file = './data/yandex_market_smartphone.csv', row.names = F)
+# запись в лог файл
+write(paste('Файл "yandex_market_smartphone.csv" создан:', Sys.time()), 
+      file = log.filename, append = T)
+```
+
+## Построение графика lattice на основе данных полученных в первой лабораторной работы
+
+```{r, warning=FALSE}
+library('lattice')
+
+# Загружаем данные из csv файла
+data <- read.csv("./data/yandex_market_smartphone.csv", header = TRUE, sep = ',')
+
+firm <- array()
+for (i in strsplit(as.character(data$Smartphone_Name), " ")){
+  firm <- append(firm, i[2])
+}
+firm <- firm[2:97]
+
+png('image_lattice.png', width = 1000, height = 1000)
+xyplot(Price ~ Rating | firm, data = data, auto.key = list(space = 'right'),
+       ylab = 'Цена смартфона',
+       xlab = 'Рейтинг смартфона',
+       main = 'График разброса цены относительно рейтинга')
+dev.off()
+```
