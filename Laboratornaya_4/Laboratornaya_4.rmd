@@ -1,0 +1,127 @@
+---
+title: "Лабораторная Работа №4"
+author: "Закутняя Лилия"
+date: "10 04 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Вариант -- 8
+
+## Задание
+
+С помощью «knitr» создать html-отчёт с короткими пояснениями к данным и с двумя картами:
+
+1. Карта-хороплет регионов РФ, входящих в состав федерального округа, указанного в варианте, построенная функцией spplot()по данным сборников “Регионы России” за последний доступный год.
+2. Такая же карта но со статистикой за 2010 год, построенная функцией ggplot().
+
+Индивидуальное задание:
+Северо-западный федеральный округ, любой показатель из раздела «Сельское и лесное хозяйство». ("Продукция сельского хозяйства")
+
+
+## Карта-хороплет регионов РФ построенная с помощью ssplot на данных за 2010 год
+
+```{r, warning=F, message=F}
+# Подключаем нужные библиотеки
+library('R.utils')               # gunzip() для распаковки архивов 
+library('sp')                    # функция spplot()
+library('ggplot2')               # функция ggplot()
+library('RColorBrewer')          # цветовые палитры
+require('rgdal')                 # функция readOGR()
+library('broom')                 # функция tidy()
+require('dplyr')                 # функция join()
+library('scales')                # функция pretty_breaks()
+library('mapproj')               # проекции для карт
+library('gpclib')
+library('maptools')
+gpclibPermit()
+
+# Считываем шейп файл
+Regions <- readOGR("./data/admin_level_4.shp")
+reg_index <- c(27, 38, 28, 6, 8, 48, 3, 10, 52)
+# Загружаем данные по показателю "Продукция сельского хозяйства" за 2010 год
+df.1 <- read.csv2('./data/agricultural_products_2010.csv', stringsAsFactors = FALSE)
+df.1
+
+# Избавляемся от лишних регионов
+Regions <- Regions[reg_index, ]
+
+# Преобразуем имена в факторы
+Regions@data$name <- as.factor(Regions@data$name)
+
+# Делаем слияние шейп-файла с данными с росстата
+Regions@data <- merge(Regions@data, df.1, by.x = 'name', by.y = 'reg', sort = FALSE)
+
+# Задаём палитру
+mypalette <-colorRampPalette(c('whitesmoke', 'coral3'))
+
+# Строим карту
+spplot(Regions, 'statistic', col.regions = mypalette(16),
+       col = 'coral4', main = 'Показатель продукции сельского хозяйства',
+       panel = function(x, y, z, subscripts, ...){
+         panel.polygonsplot(x, y, z, subscripts, ...)
+         sp.text(coordinates(Regions),
+                 Regions$name[subscripts], cex = 0.7)
+       }, xlim = c(10, 75), ylim = c(50, 80))
+
+# Очищаем память
+rm(Regions)
+```
+
+## Карта-хороплет регионов РФ построенная с помощью ggplot на данных за 2019 год
+
+```{r, warning=F, message=F}
+library('gpclib')
+require('rgdal')                 # функция readOGR()
+require('plyr')                  # функция join()
+library('ggplot2')               # функция ggplot()
+library('mapproj')               # работа с проекциями карт
+library('scales')                # функция pretty_breaks()
+library('maptools')
+
+gpclibPermit()
+
+# Загрузка данных зза 2019 год
+df.2 <- read.csv2('./data/agricultural_products_2019.csv', stringsAsFactors = F)
+df.2
+
+# Считываем шейп-файл
+Regions <- readOGR('./data/admin_level_4.shp')
+
+# Индексы шейп файла
+reg_index <- c(27, 38, 28, 6, 8, 48, 3, 10, 52)
+
+# Оставляем нужные нам регионы
+Regions <- Regions[reg_index, ]
+
+# Создаем столбец id для связи с другими таблицами
+Regions@data$id <- Regions@data$name
+# Преобразовываем SpatialPolygonsDataFrame в data.frame
+Regions.points <- fortify(Regions, region = 'id')
+# Добавляем к координатам сведения о регионах
+Regions.df <- join(Regions.points, Regions@data, by = 'id')
+
+df.2$id <- df.2$reg
+Regions.df <- join(Regions.df, df.2[, c('id', 'statistic')], by = 'id')
+
+# Координаты центров полигонов (для подписей регионов)
+centroids.df <- as.data.frame(coordinates(Regions))
+
+centroids.df$id <- Regions@data$id
+colnames(centroids.df) <- c('long', 'lat', 'id')
+
+# Строим карту
+ggplot() + geom_polygon(data = Regions.df,
+                              aes(long, lat, group = group, fill = statistic)) +
+  geom_path(data = Regions.df, aes(long, lat, group = group),
+            color = 'coral4') +
+  coord_map(projection = 'gilbert', xlim = c(10, 65), ylim = c(50, 100)) +
+  scale_fill_distiller(palette = 'OrRd', direction = 1,
+                       breaks = pretty_breaks(n = 5)) +
+  labs(x = 'Долгота', y = 'Широта',
+       title = 'Показатель продукции сельского хозяйства') +
+  geom_text(data = centroids.df, aes(long, lat, label = id))
+```
