@@ -58,10 +58,10 @@ params <- c(params, mrv)
 content <- c(params, 'content')
 doc <- getOpenDataRF(content)
 
-# Оставляем только те данные в которых присутствует поселок Пурпе
+# Оставляем только те данные в которых присутствует г. Жирновск
 doc <- doc[grep('г. Жирновск', doc$Address), c('Year2', 'Wall', 'TotalArea1', 'Address')]
 
-# Находим координаты с помощь имеющихся адрессов через API Yandex карт
+# Находим координаты с помощь имеющихся адресов через API Yandex карт
 # Ключ API для работы с Яндекс картами
 API.key <- 'd75fbda2-a2ee-464f-be91-1bd0c2349bff'
 URL.base <- 'https://geocode-maps.yandex.ru/1.x/'
